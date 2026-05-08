@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>數學勇者：時之挑戰</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Noto+Sans+TC:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #0f172a;
+            color: white;
+            overflow: hidden;
+        }
+
+        .game-canvas {
+            height: 320px;
+            position: relative;
+            border-radius: 2rem 2rem 0 0;
+            overflow: hidden;
+            transition: all 0.5s ease;
+        }
+
+        /* 不同關卡的背景 */
+        .bg-level-1 { background: linear-gradient(to bottom, #1e3a8a, #3b82f6); }
+        .bg-level-2 { background: linear-gradient(to bottom, #7c2d12, #ea580c); }
+        .bg-level-3 { background: linear-gradient(to bottom, #4c1d95, #8b5cf6); }
+        .bg-level-4 { background: linear-gradient(to bottom, #064e3b, #10b981); }
+        .bg-level-5 { background: linear-gradient(to bottom, #450a0a, #dc2626); }
+
+        .character {
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
+        }
+
+        .attack-anim { animation: attack 0.4s ease-in-out; }
+        @keyframes attack {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(50px) scale(1.1); }
+        }
+
+        .shake { animation: shake 0.4s ease-in-out; }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-8px); }
+            75% { transform: translateX(8px); }
+        }
+
+        .timer-glow {
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
+        }
+
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-2xl bg-slate-900 rounded-[2.5rem] shadow-2xl border-4 border-slate-800 overflow-hidden relative">
+        
+        <!-- 頂部計時器與資訊 -->
+        <div class="absolute top-4 left-0 w-full z-10 px-6 flex justify-between items-center">
+            <div class="bg-black/50 backdrop-blur-md rounded-full px-4 py-1 flex items-center gap-2 border border-white/20">
+                <span class="text-amber-400">⏱️</span>
+                <span id="game-clock" class="font-mono font-bold text-xl text-white">00:00</span>
+            </div>
+            <div class="bg-black/50 backdrop-blur-md rounded-full px-4 py-1 border border-white/20">
+                <span class="text-xs uppercase tracking-widest text-slate-400 mr-2">Score</span>
+                <span id="score-display" class="font-bold text-xl text-cyan-400">0</span>
+            </div>
+        </div>
+
+        <!-- 戰鬥舞台 -->
+        <div id="stage" class="game-canvas bg-level-1 flex items-end justify-around pb-10 px-4">
+            <!-- 勇者區域 -->
+            <div class="flex flex-col items-center">
+                <div id="hero" class="character text-7xl mb-4">🛡️</div>
+                <div class="w-28 h-4 bg-slate-950 rounded-full border-2 border-white/20 overflow-hidden">
+                    <div id="hero-hp-bar" class="h-full bg-gradient-to-r from-emerald-500 to-green-400 transition-all duration-300" style="width: 100%"></div>
+                </div>
+                <div id="combo-text" class="h-6 mt-1 text-orange-400 font-black italic text-sm opacity-0 transition-opacity">COMBO x0</div>
+            </div>
+
+            <!-- 怪物區域 -->
+            <div class="flex flex-col items-center">
+                <!-- 怪物攻擊倒數條 -->
+                <div class="w-32 h-2 bg-slate-950 rounded-full mb-2 overflow-hidden timer-glow">
+                    <div id="monster-timer-bar" class="h-full bg-rose-500" style="width: 100%"></div>
+                </div>
+                <div id="monster" class="character text-8xl mb-4">👾</div>
+                <div class="w-32 h-4 bg-slate-950 rounded-full border-2 border-white/20 overflow-hidden">
+                    <div id="monster-hp-bar" class="h-full bg-gradient-to-r from-rose-600 to-red-400 transition-all duration-300" style="width: 100%"></div>
+                </div>
+                <div id="monster-label" class="mt-2 bg-black/40 px-3 py-0.5 rounded text-xs font-bold uppercase tracking-tighter">LV.1 史萊姆</div>
+            </div>
+        </div>
+
+        <!-- 題目與操作區 -->
+        <div class="p-8 bg-white">
+            <div id="question-container" class="mb-8 min-h-[90px]">
+                <h3 id="problem-category" class="text-blue-500 font-bold text-xs uppercase mb-1 tracking-widest">載入中...</h3>
+                <p id="problem-text" class="text-slate-800 text-xl md:text-2xl font-bold leading-relaxed">
+                    勇者，準備好開始你的冒險了嗎？
+                </p>
+            </div>
+
+            <div class="flex flex-col md:flex-row gap-4">
+                <div class="flex-1 relative">
+                    <input 
+                        type="number" 
+                        id="ans-input" 
+                        placeholder="答案..." 
+                        class="w-full bg-slate-100 border-2 border-slate-200 rounded-2xl px-6 py-4 text-3xl font-bold text-slate-900 focus:border-blue-500 focus:outline-none transition-all placeholder:text-slate-300"
+                        inputmode="numeric"
+                    >
+                </div>
+                <button 
+                    id="submit-btn"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-black py-4 px-10 rounded-2xl text-xl shadow-lg shadow-blue-200 transition-all active:scale-95"
+                >
+                    攻擊！
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 結算畫面 -->
+    <div id="overlay" class="fixed inset-0 bg-slate-950/95 backdrop-blur-xl hidden flex-col items-center justify-center p-6 z-50 text-center">
+        <div id="over-icon" class="text-9xl mb-6">🏆</div>
+        <h2 id="over-title" class="text-6xl font-black text-white mb-2 italic">冒險完成</h2>
+        <div class="space-y-2 mb-10">
+            <p class="text-slate-400 text-xl">總得分：<span id="final-score" class="text-cyan-400 font-bold">0</span></p>
+            <p class="text-slate-400 text-xl">總耗時：<span id="final-time" class="text-amber-400 font-bold">00:00</span></p>
+        </div>
+        <button 
+            onclick="location.reload()"
+            class="bg-white text-slate-950 font-black py-5 px-16 rounded-full text-2xl hover:bg-cyan-400 transition-all transform hover:scale-105 active:scale-95"
+        >
+            重新開始挑戰
+        </button>
+    </div>
+
+    <script>
+        const MONSTERS = [
+            { name: "森林史萊姆", icon: "💧", hp: 1, timer: 15000, theme: "bg-level-1" },
+            { name: "荒野哥布林", icon: "👺", hp: 2, timer: 12000, theme: "bg-level-2" },
+            { name: "精英石頭人", icon: "🗿", hp: 3, timer: 10000, theme: "bg-level-3" },
+            { name: "城堡石像鬼", icon: "🦇", hp: 4, timer: 8000, theme: "bg-level-4" },
+            { name: "暗黑滅世龍", icon: "🐲", hp: 6, timer: 6000, theme: "bg-level-5" }
+        ];
+
+        const Problems = {
+            generate() {
+                const types = [this.mixed, this.distribute, this.compare, this.inventory];
+                return types[Math.floor(Math.random() * types.length)]();
+            },
+            mixed() {
+                const a = rand(15, 30), b = rand(3, 7), pay = 500;
+                return { cat: "混合運算", q: `買了 ${b} 個單價 ${a} 元的麵包，付給老闆 ${pay} 元，應找回多少元？`, a: pay - (a * b) };
+            },
+            distribute() {
+                const per = rand(8, 12), box = rand(10, 20);
+                return { cat: "分配問題", q: `果園有 ${per * box} 顆橘子，每 ${per} 顆裝成一籃，一共可以裝成多少籃？`, a: box };
+            },
+            compare() {
+                const a = rand(100, 200), diff = rand(20, 50);
+                return { cat: "和差問題", q: `哥哥有 ${a} 元，弟弟比哥哥少 ${diff} 元，請問兩人共有多少元？`, a: a + (a - diff) };
+            },
+            inventory() {
+                const base = rand(5, 10), times = rand(3, 6), more = rand(2, 15);
+                return { cat: "倍數應用", q: `倉庫裡有 ${base} 箱蘋果，梨子的數量是蘋果的 ${times} 倍還多 ${more} 箱，請問梨子有幾箱？`, a: (base * times) + more };
+            }
+        };
+
+        function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+        let state = {
+            gameActive: true,
+            startTime: Date.now(),
+            score: 0,
+            combo: 0,
+            level: 0,
+            heroHp: 100,
+            monsterHp: 1,
+            monsterMaxHp: 1,
+            monsterTimer: 100, // 百分比
+            monsterFullTime: 15000,
+            currentAns: 0,
+            lastTick: Date.now()
+        };
+
+        const ui = {
+            clock: document.getElementById('game-clock'),
+            score: document.getElementById('score-display'),
+            heroHp: document.getElementById('hero-hp-bar'),
+            monsterHp: document.getElementById('monster-hp-bar'),
+            monsterTimer: document.getElementById('monster-timer-bar'),
+            monsterIcon: document.getElementById('monster'),
+            monsterLabel: document.getElementById('monster-label'),
+            heroIcon: document.getElementById('hero'),
+            stage: document.getElementById('stage'),
+            cat: document.getElementById('problem-category'),
+            text: document.getElementById('problem-text'),
+            input: document.getElementById('ans-input'),
+            btn: document.getElementById('submit-btn'),
+            combo: document.getElementById('combo-text'),
+            overlay: document.getElementById('overlay')
+        };
+
+        function initLevel() {
+            const m = MONSTERS[Math.min(state.level, MONSTERS.length - 1)];
+            state.monsterHp = m.hp;
+            state.monsterMaxHp = m.hp;
+            state.monsterFullTime = m.timer;
+            state.monsterTimer = 100;
+            
+            ui.monsterIcon.textContent = m.icon;
+            ui.monsterLabel.textContent = `LV.${state.level + 1} ${m.name}`;
+            ui.stage.className = `game-canvas flex items-end justify-around pb-10 px-4 ${m.theme}`;
+            
+            nextQuestion();
+        }
+
+        function nextQuestion() {
+            const p = Problems.generate();
+            ui.cat.textContent = p.cat;
+            ui.text.textContent = p.q;
+            state.currentAns = p.a;
+            ui.input.value = '';
+            ui.input.focus();
+            state.monsterTimer = 100; // 換新題目時重置怪物的攻擊條（可選，讓玩家有喘息空間）
+        }
+
+        function handleAttack() {
+            if (!state.gameActive) return;
+            const val = parseInt(ui.input.value);
+            if (isNaN(val)) return;
+
+            if (val === state.currentAns) {
+                // 答對：英雄攻擊
+                state.combo++;
+                state.score += 10 * state.combo;
+                state.monsterHp--;
+                
+                ui.heroIcon.classList.add('attack-anim');
+                ui.monsterIcon.classList.add('shake');
+                setTimeout(() => {
+                    ui.heroIcon.classList.remove('attack-anim');
+                    ui.monsterIcon.classList.remove('shake');
+                }, 400);
+
+                if (state.monsterHp <= 0) {
+                    state.level++;
+                    if (state.level >= MONSTERS.length) return win();
+                    initLevel();
+                } else {
+                    nextQuestion();
+                }
+            } else {
+                // 答錯：怪物反擊
+                monsterAttack("錯誤！");
+            }
+            updateUI();
+        }
+
+        function monsterAttack(reason = "超時！") {
+            state.combo = 0;
+            state.heroHp -= 20;
+            state.monsterTimer = 100; // 攻擊完重置條
+            
+            ui.monsterIcon.classList.add('attack-anim');
+            ui.heroIcon.classList.add('shake');
+            setTimeout(() => {
+                ui.monsterIcon.classList.remove('attack-anim');
+                ui.heroIcon.classList.remove('shake');
+            }, 400);
+
+            if (state.heroHp <= 0) die();
+            else {
+                ui.input.value = '';
+                ui.input.focus();
+            }
+            updateUI();
+        }
+
+        function updateUI() {
+            ui.score.textContent = state.score;
+            ui.heroHp.style.width = `${state.heroHp}%`;
+            ui.monsterHp.style.width = `${(state.monsterHp / state.monsterMaxHp) * 100}%`;
+            
+            if (state.combo >= 2) {
+                ui.combo.textContent = `COMBO x${state.combo}`;
+                ui.combo.style.opacity = "1";
+            } else {
+                ui.combo.style.opacity = "0";
+            }
+        }
+
+        function gameLoop() {
+            if (!state.gameActive) return;
+
+            const now = Date.now();
+            const delta = now - state.lastTick;
+            state.lastTick = now;
+
+            // 1. 更新總時鐘
+            const elapsed = Math.floor((now - state.startTime) / 1000);
+            const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const s = (elapsed % 60).toString().padStart(2, '0');
+            ui.clock.textContent = `${m}:${s}`;
+
+            // 2. 更新怪物攻擊條
+            // 每幀扣除的百分比 = (delta / 總限時) * 100
+            const drop = (delta / state.monsterFullTime) * 100;
+            state.monsterTimer -= drop;
+            ui.monsterTimer.style.width = `${Math.max(0, state.monsterTimer)}%`;
+
+            if (state.monsterTimer <= 0) {
+                monsterAttack();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function win() {
+            state.gameActive = false;
+            showEnd("👑", "傳奇完成！", "你拯救了數學世界！");
+        }
+
+        function die() {
+            state.gameActive = false;
+            showEnd("💀", "冒險失敗", "勇者體力不支...");
+        }
+
+        function showEnd(icon, title, msg) {
+            document.getElementById('over-icon').textContent = icon;
+            document.getElementById('over-title').textContent = title;
+            document.getElementById('final-score').textContent = state.score;
+            document.getElementById('final-time').textContent = ui.clock.textContent;
+            ui.overlay.classList.replace('hidden', 'flex');
+        }
+
+        ui.btn.addEventListener('click', handleAttack);
+        ui.input.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleAttack(); });
+
+        // 啟動
+        initLevel();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
